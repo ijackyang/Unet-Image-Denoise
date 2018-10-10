@@ -109,7 +109,7 @@ class Dataset(object):
                 self.image_ids = next(os.walk(data_dir))[1]
         
         def load_image(self,image_id):
-                image_path = os.path.join(self.base_path,image_id,image_id+'.JPEG')
+                image_path = os.path.join(self.base_path,image_id,image_id+'.jpg')
                 noise_path = os.path.join(self.base_path,image_id,image_id+'_n.jpg')
                 image = cv2.imread(image_path)
                 noise = cv2.imread(noise_path)
