@@ -44,9 +44,7 @@ data_dir = './dataset/Sony/'
 checkpoint_dir = './result_Sony/'
 result_dir = './result_Sony/'
 
-
 # In[5]:
-
 
 def lrelu(x):
     return K.maximum(x * 0.2, x)
@@ -141,14 +139,6 @@ def pack_raw(raw):
                           im[1:H:2, 0:W:2, :]), axis=2)
     return out
 
-
-# In[23]:
-
-
-image_ids = [fn.split('.')[0][0:5] for fn in next(os.walk(os.path.join(data_dir,'long')))[2]]
-glob.glob(os.path.join(data_dir,'short',image_ids[0]+'_*.ARW'))
-
-
 # In[ ]:
 
 
@@ -156,12 +146,17 @@ class Dataset(object):
 
         def __init__(self,data_dir):
                 self.base_path = data_dir
-                self.image_ids = [fn.split('.')[0][0:5] for fn in next(os.walk(os.path.join(data_dir,'long')))[2]]
+                self.image_ids = [int(fn.split('.')[0][0:5]) for fn in next(os.walk(os.path.join(data_dir,'long')))[2]]
+                self.gt_images = [None]*6000
+                self.input_images = {}
+                self.input_images['300'] = [None]*len(self.image_ids)
+                self.input_images['250'] = [None]*len(self.image_ids)
+                self.input_images['100'] = [None]*len(self.image_ids)
         
         def load_image(self,image_id):
-                gt_path    = glob.glob(os.path.join(self.base_path,'long',image_id+'_*.ARW'))[0]
+                gt_path    = glob.glob(os.path.join(self.base_path,'long','%05d_00*.ARW'%image_id))[0]
                 gt_fn      = os.path.basename(gt_path)
-                in_files   = glob.glob(os.path.join(self.base_path,'short',image_id+'_*.ARW'))
+                in_files   = glob.glob(os.path.join(self.base_path,'short','%05d_00*.ARW'%image_id))
                 in_path    = in_files[np.random.random_integers(0, len(in_files) - 1)]
                 in_fn      = os.path.basename(in_path)
                 
@@ -169,56 +164,32 @@ class Dataset(object):
                 gt_expo    = float(gt_fn[9:-5])
                 ratio      = min(gt_expo/in_expo,300)
                 
+                if self.input_images[str(ratio)[0:3]][image_id] is None:
+                    raw = rawpy.imread(in_path)
+                    self.input_images[str(ratio)[0:3]][image_id] = np.expand_dims(pack_raw(raw),axis=0)*ratio
+                    
+                    gt_raw = rawpy.imread(gt_path)
+                    gt_img =  gt_raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
+                    self.gt_images[image_id] = np.expand_dims(np.float32(im / 65535.0), axis=0)
                 
-                image_path = os.path.join(self.base_path,image_id,image_id+'.jpg')
-                noise_path = os.path.join(self.base_path,image_id,image_id+'_n.jpg')
-                image = cv2.imread(image_path)
-                noise = cv2.imread(noise_path)
-                return image,noise
-
-for ind in np.random.permutation(len(train_ids)):
-        # get the path from image id
-        train_id = train_ids[ind]
-        in_files = glob.glob(input_dir + '%05d_00*.ARW' % train_id)
-        in_path = in_files[np.random.random_integers(0, len(in_files) - 1)]
-        in_fn = os.path.basename(in_path)
-
-        gt_files = glob.glob(gt_dir + '%05d_00*.ARW' % train_id)
-        gt_path = gt_files[0]
-        gt_fn = os.path.basename(gt_path)
-        in_exposure = float(in_fn[9:-5])
-        gt_exposure = float(gt_fn[9:-5])
-        ratio = min(gt_exposure / in_exposure, 300)
-
-        st = time.time()
-        cnt += 1
-
-        if input_images[str(ratio)[0:3]][ind] is None:
-            raw = rawpy.imread(in_path)
-            input_images[str(ratio)[0:3]][ind] = np.expand_dims(pack_raw(raw), axis=0) * ratio
-
-            gt_raw = rawpy.imread(gt_path)
-            im = gt_raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
-            gt_images[ind] = np.expand_dims(np.float32(im / 65535.0), axis=0)
-
-        # crop
-        H = input_images[str(ratio)[0:3]][ind].shape[1]
-        W = input_images[str(ratio)[0:3]][ind].shape[2]
-
-        xx = np.random.randint(0, W - ps)
-        yy = np.random.randint(0, H - ps)
-        input_patch = input_images[str(ratio)[0:3]][ind][:, yy:yy + ps, xx:xx + ps, :]
-        gt_patch = gt_images[ind][:, yy * 2:yy * 2 + ps * 2, xx * 2:xx * 2 + ps * 2, :]
-
-        if np.random.randint(2, size=1)[0] == 1:  # random flip
-            input_patch = np.flip(input_patch, axis=1)
-            gt_patch = np.flip(gt_patch, axis=1)
-        if np.random.randint(2, size=1)[0] == 1:
-            input_patch = np.flip(input_patch, axis=2)
-            gt_patch = np.flip(gt_patch, axis=2)
-        if np.random.randint(2, size=1)[0] == 1:  # random transpose
-            input_patch = np.transpose(input_patch, (0, 2, 1, 3))
-            gt_patch = np.transpose(gt_patch, (0, 2, 1, 3))
-
-        input_patch = np.minimum(input_patch, 1.0)
+                #crop in Patch Size
+                H = input_images[str(ratio)[0:3]][ind].shape[1]
+                W = input_images[str(ratio)[0:3]][ind].shape[2]
+                
+                xx = np.random.randint(0,W-PATCH_SIZE)
+                yy = np.random.randint(0,H-PATCH_SIZE)
+                input_patch = self.input_images[str(ratio)[0:3]][image_id][:,yy:yy+PATCH_SIZE,xx:xx+PATCH_SIZE,:]
+                gt_patch = self.gt_images[image_id][:,yy*2:yy*2+PATCH_SIZE*2,xx*2:xx*2+PATCH_SIZE*2,:]
+                
+                if np.random.randint(2,size=1)[0] == 1: # random flip
+                    input_patch = np.flip(input_patch,axis = 1)
+                    gt_patch    = np.flip(gt_patch,axis = 1)
+                if np.random.randint(2,size=1)[0] ==1: #random mirror
+                    input_patch = np.flip(input_patch,axis = 2)
+                    gt_patch    = np.flip(gt_patch,axis = 2)
+                if np.random.randint(2,size=1)[0] ==1: #random transpose
+                    input_patch = np.transpose(input_patch,(0,2,1,3))
+                    gt_patch    = np.transpose(gt_patch,(0,2,1,3))
+                input_patch = np.mimimum(input_patch,1.0)
+                return input_patch,gt_patch
 
