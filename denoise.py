@@ -46,8 +46,8 @@ result_dir = './result_Sony/'
 
 # In[5]:
 
-def lrelu(x):
-    return K.maximum(x * 0.2, x)
+def leaky_relu(x):
+    return KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.2))(x)
 
 
 # In[6]:
@@ -55,64 +55,57 @@ def lrelu(x):
 
 def unet():
         "unet for image reconstruction"
-        P0 = x = KL.Input(shape=(None,None,3),name="u_net_input")
-        x = KL.Conv2D(64, (3, 3), strides=(1, 1), name='conv1', use_bias=True,padding="same")(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Conv2D(64, (3, 3), strides=(2, 2), name='conv1a', use_bias=True,padding="same")(x)
-        P1= x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
+        model_input = KL.Input(shape=(None,None,4),name="u_net_input")
+        conv1  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv1', use_bias=True,padding="same",activation='tanh')(model_input)
+        conv1a = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv1a', use_bias=True,padding="same",activation='tanh')(conv1)
+        P1     = KL.MaxPooling2D(pool_size=(3,3),strides=(2,2),padding="same",name="max_pooling_1")(conv1a)
 
-        x = KL.Conv2D(64,(3,3),strides=(1,1),name='conv2',use_bias=True,padding="same")(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Conv2D(64,(3,3),strides=(2,2),name='conv2a',use_bias=True,padding="same")(x)
-        P2= x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
+        conv2  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv2', use_bias=True,padding="same",activation='tanh')(P1)
+        conv2a = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv2a', use_bias=True,padding="same",activation='tanh')(conv2)
+        P2     = KL.MaxPooling2D(pool_size=(3,3),strides=(2,2),padding="same",name="max_pooling_2")(conv2a)
+
+        conv3  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv3', use_bias=True,padding="same",activation='tanh')(P2)
+        conv3a = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv3a', use_bias=True,padding="same",activation='tanh')(conv3)
+        P3     = KL.MaxPooling2D(pool_size=(3,3),strides=(2,2),padding="same",name="max_pooling_3")(conv3a)
+
+        conv4  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv4', use_bias=True,padding="same",activation='tanh')(P3)
+        conv4a = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv4a', use_bias=True,padding="same",activation='tanh')(conv4)
+        P4     = KL.MaxPooling2D(pool_size=(3,3),strides=(2,2),padding="same",name="max_pooling_1")(conv4a)
+
+        conv5  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv5', use_bias=True,padding="same",activation='tanh')(P4)
+        conv5a = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv5a', use_bias=True,padding="same",activation='tanh')(conv5)
+        P5     = KL.MaxPooling2D(pool_size=(3,3),strides=(2,2),padding="same",name="max_pooling_1")(conv5a)
+
         
-        x = KL.Conv2D(128,(3,3),strides=(1,1),name='conv3',use_bias=True,padding="same")(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Conv2D(128,(3,3),strides=(2,2),name='conv3a',use_bias=True,padding="same")(x)
-        P3= x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
+        up4      = KL.Deconvolution2D(nb_filter=256, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv4',border_mode='same',activation='tanh')(P5)
+        C4       = KL.Concatenate()([P4,up4])
+        conv4_u  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv4_u', use_bias=True,padding="same",activation='tanh')(C4)
+        conv4a_u = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv4a_u', use_bias=True,padding="same",activation='tanh')(conv4_u)        
 
-        x = KL.Conv2D(128,(3,3),strides=(1,1),name='conv4',use_bias=True,padding="same")(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Conv2D(128,(3,3),strides=(2,2),name='conv4a',use_bias=True,padding="same")(x)
-        P4= x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
+        up3      = KL.Deconvolution2D(nb_filter=256, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv3',border_mode='same',activation='tanh')(conv4a_u)
+        C3       = KL.Concatenate()([P3,up3])
+        conv3_u  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv3_u', use_bias=True,padding="same",activation='tanh')(C3)
+        conv3a_u = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv3a_u', use_bias=True,padding="same",activation='tanh')(conv3_u)  
+        
+ 
+        up2      = KL.Deconvolution2D(nb_filter=256, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv2',border_mode='same',activation='tanh')(conv3a_u)
+        C2       = KL.Concatenate()([P2,up2])
+        conv2_u  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv2_u', use_bias=True,padding="same",activation='tanh')(C2)
+        conv2a_u = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv2a_u', use_bias=True,padding="same",activation='tanh')(conv2_u) 
+        
+        
+        up1      = KL.Deconvolution2D(nb_filter=256, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv3',border_mode='same',activation='tanh')(conv2a_u)
+        C1       = KL.Concatenate()([P1,up1])
+        conv1_u  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv1_u', use_bias=True,padding="same",activation='tanh')(C1)
+        conv1a_u = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv1a_u', use_bias=True,padding="same",activation='tanh')(conv1_u) 
 
-        x = KL.Conv2D(256,(3,3),strides=(1,1),name='conv5',use_bias=True,padding="same")(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Conv2D(256,(3,3),strides=(2,2),name='conv5a',use_bias=True,padding="same")(x)
-        P5= x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
+        up0      = KL.Deconvolution2D(nb_filter=256, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv3',border_mode='same',activation='tanh')(conv1a_u)
+        C0       = KL.Concatenate()([model_input,up0])
+        conv0_u  = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv0_u', use_bias=True,padding="same",activation='tanh')(C0)
+        conv0a_u = KL.Conv2D(32, (3, 3), strides=(1, 1), name='conv0a_u', use_bias=True,padding="same",activation='tanh')(conv0_u) 
 
-        x = KL.Deconvolution2D(nb_filter=128, nb_row=3, nb_col=3,subsample=(1, 1),name='deconv4',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Deconvolution2D(nb_filter=128, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv4a',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        C4= x = KL.Add()([P4,x])
-
-        x = KL.Deconvolution2D(nb_filter=128, nb_row=3, nb_col=3,subsample=(1, 1),name='deconv3',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Deconvolution2D(nb_filter=128, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv3a',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        C3= x = KL.Add()([P3,x])
-
-
-        x = KL.Deconvolution2D(nb_filter=64, nb_row=3, nb_col=3,subsample=(1, 1),name='deconv2',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Deconvolution2D(nb_filter=64, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv2a',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        C2= x = KL.Add()([P2,x])
-
-        x = KL.Deconvolution2D(nb_filter=64, nb_row=3, nb_col=3,subsample=(1, 1),name='deconv1',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Deconvolution2D(nb_filter=64, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv1a',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        C1= x = KL.Add()([P1,x])
-
-        x = KL.Deconvolution2D(nb_filter=64, nb_row=3, nb_col=3,subsample=(1, 1),name='deconv0',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        x = KL.Deconvolution2D(nb_filter=3, nb_row=3, nb_col=3,subsample=(2, 2),name='deconv0a',border_mode='same')(x)
-        x = KL.Lambda(lambda t:keras.activations.relu(t,alpha=0.1))(x)
-        C0= x = KL.Add()([P0,x])
-
-        x = KL.Conv2D(3,(3,3),strides=(1,1),name='convr',use_bias=True,padding="same")(x)
+        x = KL.Conv2D(12,(1,1),strides=(1,1),name='convr',use_bias=True,padding="same")(conv0a_u)
+        x = KL.Lambda(lambda t:tf.depth_to_space(t,2))(x)
         denoised_image = KL.Activation('linear')(x)
 
         model = KM.Model(inputs=P0,outputs=denoised_image)
