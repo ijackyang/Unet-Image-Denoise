@@ -340,40 +340,26 @@ class DenoiseUnet():
                denoised_image = self.keras_model.predict([img])
                return denoised_image                 
 
-if __name__ == '__main__':
-        import argparse
+train_dataset = Dataset('train')
+dev_dataset   = Dataset('dev')
 
-        parser = argparse.ArgumentParser(
-                description="Train Unet to Denoise Image")
-        parser.add_argument("command",
-                            metavar="<command>",
-                            help="'train' or 'detect'")
-        parser.add_argument('--weights',required=True,
-                            metavar="/path/to/weights.h5",
-                            help="Path to weights.h5 file or 'coco'")
-        parser.add_argument('--image',required=False,
-                             metavar="path or URL to image",
-                             help='Image to denoise')
-        args = parser.parse_args()
+#                                                      
+model =  DenoiseUnet(mode='train', weights='new',model_dir="../log")
+model.train(train_dataset=train_dataset,val_dataset=dev_dataset,learning_rate=0.00005,epochs=200,
+            steps_per_epoch=5192,validation_steps=100,batch_size=1)  
 
-        if args.command == "detect":
-                assert args.image,"Provide --image to be denoised"
-        
-        model = DenoiseUnet(mode=args.command, weights=args.weights.lower(),model_dir="../log")
-        
-        if args.weights.lower() == "new":
-                print("Model is initialized")
-        elif args.weights.lower() == "last":
-                weights_path = model.find_last()[1]
-                model.load_weights(weights_path)
+#resume train                                                                                                            
+weights_path = model.find_last()[1]
+model.load_weights(weights_path)
+model.train(train_dataset=train_dataset,val_dataset=dev_dataset,learning_rate=0.00005,epochs=200,
+            steps_per_epoch=5192,validation_steps=100,batch_size=1)                                                   
 
-        train_dataset = Dataset('train')
-        dev_dataset   = Dataset('dev')
-
-        if args.command == "train":
-                model.train(train_dataset=train_dataset,val_dataset=dev_dataset,learning_rate=0.00005,epochs=200,steps_per_epoch=5192,validation_steps=100,batch_size=1)
-        elif args.command == "detect":
-                denoised_image = model.detect(args.image)[0]
-                cv2.imwrite('denoised_image.jpg',denoised_image)                                                   
+                                                    
+#for detect
+model =  DenoiseUnet(mode='detect', weights='new',model_dir="../log")
+weights_path = model.find_last()[1]
+model.load_weights(weights_path)                                                      
+denoised_image = model.detect(args.image)[0]
+cv2.imwrite('denoised_image.jpg',denoised_image)                                                   
                                                       
                                                       
