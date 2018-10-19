@@ -155,42 +155,40 @@ def pack_raw(raw):
 
 class Dataset(object):
 
-        def __init__(self,data_dir):
-                self.base_path = data_dir
-                self.image_ids = [int(fn.split('.')[0][0:5]) for fn in next(os.walk(os.path.join(data_dir,'long')))[2]]
-                self.gt_images = [None]*6000
-                self.input_images = {}
-                self.input_images['300'] = [None]*len(self.image_ids)
-                self.input_images['250'] = [None]*len(self.image_ids)
-                self.input_images['100'] = [None]*len(self.image_ids)
+        def __init__(self,data_mode):
+                if data_mode=='train':
+                        data_list = './train_list.txt'
+                elif data_mode=='dev':
+                        data_list = './val_list.txt'
+                elif data_mode=='test':
+                        data_list = './test_list.txt'
+                else:
+                        print("wront parameters for data_mode")
+                        exit()
+                with open(data_list) as f:
+                        self.image_pairs = [line.strip().split(' ')[:2] for line in f.readlines()]
         
-        def load_image(self,image_id):
-                gt_path    = glob.glob(os.path.join(self.base_path,'long','%05d_00*.ARW'%image_id))[0]
+        def load_image(self,image_pair):
+                gt_path    = image_pair[1]
                 gt_fn      = os.path.basename(gt_path)
-                in_files   = glob.glob(os.path.join(self.base_path,'short','%05d_00*.ARW'%image_id))
-                in_path    = in_files[np.random.random_integers(0, len(in_files) - 1)]
+                in_path    = image_pair[0]
                 in_fn      = os.path.basename(in_path)
                 
                 in_expo    = float(in_fn[9:-5])
                 gt_expo    = float(gt_fn[9:-5])
                 ratio      = min(gt_expo/in_expo,300)
                 
-                if self.input_images[str(ratio)[0:3]][image_id] is None:
-                    input_raw = rawpy.imread(in_path)
-                    self.input_images[str(ratio)[0:3]][image_id] = pack_raw(input_raw)*ratio
-                    
-                    gt_raw = rawpy.imread(gt_path)
-                    gt_img =  gt_raw.postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16)
-                    self.gt_images[image_id] = np.float32(gt_img / 65535.0)
+                noise_img = pack_raw(rawpy.imread(in_path))*ratio              
+                gt_img    = np.float32((rawpy.imread(gt_path).postprocess(use_camera_wb=True, half_size=False, no_auto_bright=True, output_bps=16))/65535.0)
                 
                 #crop in Patch Size
-                H = self.input_images[str(ratio)[0:3]][ind].shape[0]
-                W = self.input_images[str(ratio)[0:3]][ind].shape[1]
+                H = noise_img.shape[0]
+                W = noise_img.shape[1]
                 
                 xx = np.random.randint(0,W-PATCH_SIZE)
                 yy = np.random.randint(0,H-PATCH_SIZE)
-                input_patch = self.input_images[str(ratio)[0:3]][image_id][yy:yy+PATCH_SIZE,xx:xx+PATCH_SIZE,:]
-                gt_patch = self.gt_images[image_id][yy*2:yy*2+PATCH_SIZE*2,xx*2:xx*2+PATCH_SIZE*2,:]
+                input_patch = noise_img[yy:yy+PATCH_SIZE,xx:xx+PATCH_SIZE,:]
+                gt_patch    = gt_img[yy*2:yy*2+PATCH_SIZE*2,xx*2:xx*2+PATCH_SIZE*2,:]
                 
                 if np.random.randint(2,size=1)[0] == 1: # random flip
                     input_patch = np.flip(input_patch,axis = 0)
@@ -206,14 +204,14 @@ class Dataset(object):
             
             
 def data_generator(dataset,batch_size):
-        image_ids   = np.copy(dataset.image_ids)
+        image_pairs   = np.copy(dataset.image_pairs)
         while True:
                 try:
-                        image_id   = random.sample(image_ids,batch_size)
+                        image_pair   = random.sample(image_pair,batch_size)
                         batch_noise_image  = np.zeros((batch_size,PATCH_SIZE,PATCH_SIZE,4)
                         batch_target_image = np.zeros((batch_size,PATCH_SIZE*2,PATCH_SIZE*2,3))
                         for i in range(batch_size):
-                            noise_image,target_img = dataset.load_image(image_id[i])
+                            noise_image,target_img = dataset.load_image(image_pair[i])
                             batch_noise_image[i,:,:,:]   = noise_image
                             batch_target_image[i,:,:,:]  = target_image
                         inputs = [batch_noise_image]
@@ -350,9 +348,6 @@ if __name__ == '__main__':
         parser.add_argument("command",
                             metavar="<command>",
                             help="'train' or 'detect'")
-        parser.add_argument('--dataset',required=False,
-                             metavar="/path/to/denoise/dataset",
-                             help='Directory of denoising dataset')
         parser.add_argument('--weights',required=True,
                             metavar="/path/to/weights.h5",
                             help="Path to weights.h5 file or 'coco'")
@@ -361,13 +356,8 @@ if __name__ == '__main__':
                              help='Image to denoise')
         args = parser.parse_args()
 
-        if args.command=="train":
-                assert args.dataset, "Argument --dataset is required fro training"
-        elif args.command == "detect":
+        if args.command == "detect":
                 assert args.image,"Provide --image to be denoised"
-
-        print("Weights: ", args.weights)
-        print("Dataset: ", args.dataset)
         
         model = DenoiseUnet(mode=args.command, weights=args.weights.lower(),model_dir="../log")
         
@@ -377,8 +367,8 @@ if __name__ == '__main__':
                 weights_path = model.find_last()[1]
                 model.load_weights(weights_path)
 
-        train_dataset = Dataset('../dataset/train')
-        dev_dataset   = Dataset('../dataset/dev')
+        train_dataset = Dataset('train')
+        dev_dataset   = Dataset('dev')
 
         if args.command == "train":
                 model.train(train_dataset=train_dataset,val_dataset=dev_dataset,learning_rate=0.00005,epochs=200,steps_per_epoch=5192,validation_steps=100,batch_size=1)
